@@ -90,7 +90,13 @@ resource "google_spanner_database" "basic" {
   ]
   deletion_protection = false
 }
-`, instanceName, instanceName, databaseName)
+
+resource "google_spanner_database" "basic" {
+	instance = google_spanner_instance.basic.name
+	name     = "%s_spangres"
+	deletion_protection = false
+}
+`, instanceName, instanceName, databaseName, databaseName)
 }
 
 func testAccSpannerDatabase_basicUpdate(instanceName, databaseName string) string {
@@ -113,7 +119,19 @@ resource "google_spanner_database" "basic" {
   ]
   deletion_protection = false
 }
-`, instanceName, instanceName, databaseName)
+
+resource "google_spanner_database" "basic" {
+	instance = google_spanner_instance.basic.name
+	name     = "%s_spangres"
+	ddl = [
+	"CREATE TABLE t1 (t1 bigint NOT NULL PRIMARY KEY)",
+	"CREATE TABLE t2 (t2 bigint NOT NULL PRIMARY KEY)",
+	"CREATE TABLE t3 (t3 bigint NOT NULL PRIMARY KEY)",
+	"CREATE TABLE t4 (t4 bigint NOT NULL PRIMARY KEY)",
+	]
+	deletion_protection = false
+}
+`, instanceName, instanceName, databaseName, databaseName)
 }
 
 // Unit Tests for type spannerDatabaseId
