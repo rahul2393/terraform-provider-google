@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -177,6 +178,13 @@ error in any statement, the database is not created.`,
 					Type: schema.TypeString,
 				},
 			},
+			"enable_drop_protection": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `Whether drop protection is enabled for this database. Defaults to false.`,
+				Default:     false,
+			},
 			"encryption_config": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -266,6 +274,12 @@ func resourceSpannerDatabaseCreate(d *schema.ResourceData, meta interface{}) err
 		return err
 	} else if v, ok := d.GetOkExists("database_dialect"); !tpgresource.IsEmptyValue(reflect.ValueOf(databaseDialectProp)) && (ok || !reflect.DeepEqual(v, databaseDialectProp)) {
 		obj["databaseDialect"] = databaseDialectProp
+	}
+	enableDropProtectionProp, err := expandSpannerDatabaseEnableDropProtection(d.Get("enable_drop_protection"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("enable_drop_protection"); !tpgresource.IsEmptyValue(reflect.ValueOf(enableDropProtectionProp)) && (ok || !reflect.DeepEqual(v, enableDropProtectionProp)) {
+		obj["enableDropProtection"] = enableDropProtectionProp
 	}
 	instanceProp, err := expandSpannerDatabaseInstance(d.Get("instance"), d, config)
 	if err != nil {
@@ -426,6 +440,37 @@ func resourceSpannerDatabaseCreate(d *schema.ResourceData, meta interface{}) err
 		}
 	}
 
+	enableDropProtection, enableDropProtectionOk := d.GetOk("enable_drop_protection")
+	dropProtection := enableDropProtection.(bool)
+	if enableDropProtectionOk && dropProtection {
+		updateMask := []string{"enableDropProtection"}
+		url, err := tpgresource.ReplaceVars(d, config, "{{SpannerBasePath}}projects/{{project}}/instances/{{instance}}/databases/{{name}}")
+		if err != nil {
+			return err
+		}
+		// updateMask is a URL parameter but not present in the schema, so ReplaceVars
+		// won't set it
+		url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": strings.Join(updateMask, ",")})
+		if err != nil {
+			return err
+		}
+		obj := map[string]interface{}{"enableDropProtection": dropProtection}
+		res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "PATCH",
+			Project:   billingProject,
+			RawURL:    url,
+			UserAgent: userAgent,
+			Body:      obj,
+			Timeout:   d.Timeout(schema.TimeoutUpdate),
+		})
+		if err != nil {
+			return fmt.Errorf("Error updating enableDropDatabaseProtection on Database: %s", err)
+		} else {
+			log.Printf("[DEBUG] Finished updating enableDropDatabaseProtection %q: %#v", d.Id(), res)
+		}
+	}
+
 	log.Printf("[DEBUG] Finished creating Database %q: %#v", d.Id(), res)
 
 	return resourceSpannerDatabaseRead(d, meta)
@@ -502,6 +547,9 @@ func resourceSpannerDatabaseRead(d *schema.ResourceData, meta interface{}) error
 		return fmt.Errorf("Error reading Database: %s", err)
 	}
 	if err := d.Set("database_dialect", flattenSpannerDatabaseDatabaseDialect(res["databaseDialect"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err := d.Set("enable_drop_protection", flattenSpannerDatabaseEnableDropProtection(res["enableDropProtection"], d, config)); err != nil {
 		return fmt.Errorf("Error reading Database: %s", err)
 	}
 	if err := d.Set("instance", flattenSpannerDatabaseInstance(res["instance"], d, config)); err != nil {
@@ -599,6 +647,34 @@ func resourceSpannerDatabaseUpdate(d *schema.ResourceData, meta interface{}) err
 
 	d.Partial(false)
 
+	if d.HasChange("enable_drop_protection") {
+		updateMask := []string{"enableDropProtection"}
+		url, err := tpgresource.ReplaceVars(d, config, "{{SpannerBasePath}}projects/{{project}}/instances/{{instance}}/databases/{{name}}")
+		if err != nil {
+			return err
+		}
+		// updateMask is a URL parameter but not present in the schema, so ReplaceVars
+		// won't set it
+		url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": strings.Join(updateMask, ",")})
+		if err != nil {
+			return err
+		}
+		obj := map[string]interface{}{"enableDropProtection": d.Get("enable_drop_protection")}
+		res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "PATCH",
+			Project:   billingProject,
+			RawURL:    url,
+			UserAgent: userAgent,
+			Body:      obj,
+			Timeout:   d.Timeout(schema.TimeoutUpdate),
+		})
+		if err != nil {
+			return fmt.Errorf("Error updating enableDropDatabaseProtection on Database: %s", err)
+		} else {
+			log.Printf("[DEBUG] Finished updating enableDropDatabaseProtection %q: %#v", d.Id(), res)
+		}
+	}
 	return resourceSpannerDatabaseRead(d, meta)
 }
 
@@ -720,6 +796,10 @@ func flattenSpannerDatabaseDatabaseDialect(v interface{}, d *schema.ResourceData
 	return v
 }
 
+func flattenSpannerDatabaseEnableDropProtection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenSpannerDatabaseInstance(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
@@ -766,6 +846,10 @@ func expandSpannerDatabaseDatabaseDialect(v interface{}, d tpgresource.Terraform
 	return v, nil
 }
 
+func expandSpannerDatabaseEnableDropProtection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandSpannerDatabaseInstance(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	f, err := tpgresource.ParseGlobalFieldValue("instances", v.(string), "project", d, config, true)
 	if err != nil {
@@ -790,6 +874,7 @@ func resourceSpannerDatabaseEncoder(d *schema.ResourceData, meta interface{}, ob
 
 	delete(obj, "versionRetentionPeriod")
 	delete(obj, "extraStatements")
+	delete(obj, "enableDropProtection")
 	return obj, nil
 }
 
@@ -821,6 +906,7 @@ func resourceSpannerDatabaseUpdateEncoder(d *schema.ResourceData, meta interface
 	delete(obj, "versionRetentionPeriod")
 	delete(obj, "instance")
 	delete(obj, "extraStatements")
+	delete(obj, "enableDropProtection")
 	return obj, nil
 }
 

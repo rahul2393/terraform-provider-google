@@ -391,6 +391,83 @@ resource "google_spanner_database" "basic" {
 `, instanceName, instanceName, databaseName, databaseName, databaseName)
 }
 
+func TestAccSpannerDatabase_enableDropProtection(t *testing.T) {
+	t.Parallel()
+
+	rnd := RandString(t, 10)
+	instanceName := fmt.Sprintf("tf-test-%s", rnd)
+	databaseName := fmt.Sprintf("tfgen_%s", rnd)
+
+	VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckSpannerDatabaseDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				// Test creating a database with `enable_drop_protection` set
+				Config: testAccSpannerDatabase_enableDropProtection(instanceName, databaseName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet("google_spanner_database.basic", "state"),
+					resource.TestCheckResourceAttr("google_spanner_database.basic", "enable_drop_protection", "true"),
+					// reset enable_drop_protection value to false for cleanup
+					testAccResetEnableDropDatabaseProtection(t),
+				),
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				// Test removing `enable_drop_protection` and setting enableDropProtection to false
+				Config: testAccSpannerDatabase_enableDropProtectionUpdate(instanceName, databaseName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet("google_spanner_database.basic", "state"),
+					resource.TestCheckResourceAttr("google_spanner_database.basic", "enable_drop_protection", "false"),
+				),
+			},
+		},
+	})
+}
+
+func testAccSpannerDatabase_enableDropProtection(instanceName, databaseName string) string {
+	return fmt.Sprintf(`
+resource "google_spanner_instance" "basic" {
+  name         = "%s"
+  config       = "regional-us-central1"
+  display_name = "%s-display"
+  num_nodes    = 1
+}
+
+resource "google_spanner_database" "basic" {
+  instance = google_spanner_instance.basic.name
+  name     = "%s"
+  enable_drop_protection = true
+  deletion_protection = false
+  ddl = [
+     "CREATE TABLE t1 (t1 INT64 NOT NULL,) PRIMARY KEY(t1)",
+  ]
+}
+`, instanceName, instanceName, databaseName)
+}
+
+func testAccSpannerDatabase_enableDropProtectionUpdate(instanceName, databaseName string) string {
+	return fmt.Sprintf(`
+resource "google_spanner_instance" "basic" {
+  name         = "%s"
+  config       = "regional-us-central1"
+  display_name = "%s-display"
+  num_nodes    = 1
+}
+
+resource "google_spanner_database" "basic" {
+  instance = google_spanner_instance.basic.name
+  name     = "%s"
+  ddl = [
+    "CREATE TABLE t1 (t1 INT64 NOT NULL,) PRIMARY KEY(t1)",
+  ]
+	enable_drop_protection = false
+  deletion_protection = false
+}
+`, instanceName, instanceName, databaseName)
+}
+
 // Unit Tests for validation of retention period argument
 func TestValidateDatabaseRetentionPeriod(t *testing.T) {
 	t.Parallel()
@@ -513,4 +590,44 @@ resource "google_spanner_database" "database" {
   ]
 }
 `, context)
+}
+
+func testAccResetEnableDropDatabaseProtection(t *testing.T) func(s *terraform.State) error {
+	return func(s *terraform.State) error {
+		for name, rs := range s.RootModule().Resources {
+			if rs.Type != "google_spanner_database" {
+				continue
+			}
+			if strings.HasPrefix(name, "data.") {
+				continue
+			}
+
+			config := acctest.GoogleProviderConfig(t)
+
+			updateMask := []string{"enableDropProtection"}
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{SpannerBasePath}}projects/{{project}}/instances/{{instance}}/databases/{{name}}")
+			if err != nil {
+				return err
+			}
+			// updateMask is a URL parameter but not present in the schema, so ReplaceVars
+			// won't set it
+			url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": strings.Join(updateMask, ",")})
+			if err != nil {
+				return err
+			}
+			obj := map[string]interface{}{"enableDropProtection": false}
+			_, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+				Config:    config,
+				Method:    "PATCH",
+				Project:   config.BillingProject,
+				RawURL:    url,
+				UserAgent: config.UserAgent,
+				Body:      obj,
+			})
+			if err != nil {
+				return fmt.Errorf("Error resetting enableDropDatabaseProtection on Database: %s", err)
+			}
+		}
+		return nil
+	}
 }
