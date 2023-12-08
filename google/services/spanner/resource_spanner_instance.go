@@ -189,7 +189,6 @@ min_processing_units.`,
 										Optional: true,
 										Description: `Specifies number of nodes allocated to the instance. If set, this number
 should be greater than or equal to 1.`,
-										Default:      1,
 										ExactlyOneOf: []string{},
 									},
 									"min_processing_units": {
