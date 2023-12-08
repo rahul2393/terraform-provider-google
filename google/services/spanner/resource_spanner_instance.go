@@ -190,6 +190,7 @@ min_processing_units.`,
 										Description: `Specifies number of nodes allocated to the instance. If set, this number
 should be greater than or equal to 1.`,
 										ExactlyOneOf: []string{},
+										RequiredWith: []string{},
 									},
 									"min_processing_units": {
 										Type:     schema.TypeInt,
@@ -197,6 +198,7 @@ should be greater than or equal to 1.`,
 										Description: `Specifies minimum number of processing units allocated to the instance.
 If set, this number should be multiples of 1000.`,
 										ExactlyOneOf: []string{},
+										RequiredWith: []string{},
 									},
 								},
 							},
