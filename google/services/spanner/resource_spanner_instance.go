@@ -196,7 +196,6 @@ should be greater than or equal to 1.`,
 										Optional: true,
 										Description: `Specifies minimum number of processing units allocated to the instance.
 If set, this number should be multiples of 1000.`,
-										Default:      1000,
 										ExactlyOneOf: []string{},
 									},
 								},
